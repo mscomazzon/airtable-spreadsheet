@@ -1,6 +1,6 @@
 require("dotenv").config();
 const {
-  API_KEY,
+  AIRTABLE_API_KEY,
   COHORT,
   COHORT_TA,
   SPREADSHEET_ID,
@@ -16,7 +16,7 @@ const ObjectsToCsv = require("objects-to-csv");
 const Airtable = require("airtable");
 Airtable.configure({
   endpointUrl: "https://api.airtable.com",
-  apiKey: API_KEY,
+  apiKey: AIRTABLE_API_KEY,
 });
 const students_table = Airtable.base(STUDENTS_AIRTABLE);
 const ta_table = Airtable.base(TA_FORM_AIRTABLE);
