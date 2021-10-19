@@ -8,6 +8,7 @@ const {
   STUDENTS_AIRTABLE,
   TA_FORM_AIRTABLE,
 } = process.env;
+let responses = require('./response').rows;
 
 const { google } = require("googleapis");
 
@@ -99,7 +100,7 @@ students_table("Alumno")
         .select({
           view: "Respuestas",
           fields: [
-            "Nombre y Apellido",
+            "Nombre",
             "Motivacion",
             "Intencion",
             "Razon",
@@ -112,7 +113,7 @@ students_table("Alumno")
           function page(records, fetchNextPage) {
             records.forEach(function (record) {
               students = students.map((s) => {
-                if (s.name === record.get("Nombre y Apellido")) {
+                if (s.name === record.get("Nombre")) {
                   s.motivation = record.get("Motivacion");
                   console.log(record.get("Intencion"));
                   if (record.get("Intencion") === "sólo HH") {
@@ -167,9 +168,20 @@ students_table("Alumno")
                     return s;
                   });
                 });
+
+                responses.forEach((r) => {
+                  students = students.map(s => {
+                    if(s.name === r.name){
+                      s.points = r.score;
+                    }
+                    return s;
+                  })
+                });
+
                 return students;
               })
               .then(async (final) => {
+
                 const csv = new ObjectsToCsv(final);
 
                 await csv.toDisk("../csv/download.csv");
