@@ -1,14 +1,13 @@
+let axios = require("axios");
+
 require("dotenv").config();
 const {
   AIRTABLE_API_KEY,
   COHORT,
-  COHORT_TA,
   SPREADSHEET_ID,
   CANT_GROUPS,
   STUDENTS_AIRTABLE,
-  TA_FORM_AIRTABLE,
 } = process.env;
-let responses = require('./response').rows;
 
 const { google } = require("googleapis");
 
@@ -20,7 +19,6 @@ Airtable.configure({
   apiKey: AIRTABLE_API_KEY,
 });
 const students_table = Airtable.base(STUDENTS_AIRTABLE);
-const ta_table = Airtable.base(TA_FORM_AIRTABLE);
 let students = [];
 
 async function getSpreadSheet() {
@@ -38,7 +36,6 @@ async function getSpreadSheet() {
   const googleSheets = google.sheets({ version: "v4", auth: client });
 
   // Read columns from spreadsheet
-
   for (let i = 1; i <= CANT_GROUPS; i++) {
     const getColumns = await googleSheets.spreadsheets.values.get({
       auth,
@@ -47,6 +44,9 @@ async function getSpreadSheet() {
       // nombre del tab, me da la columna A
       range: `Group ${i}`,
     });
+    /*todo:
+      encontrar el indice en donde esta Nombre y Apellido y evaluar de ahi para abajo
+    *  seria mas correcto*/
     let students = getColumns.data.values[0].slice(5);
     let points = getColumns.data.values[46].slice(5);
     let comments = getColumns.data.values[47].slice(5);
@@ -76,8 +76,6 @@ students_table("Alumno")
   })
   .eachPage(
     function page(records, fetchNextPage) {
-      // This function (`page`) will get called for each page of records.
-
       records.forEach(function (record) {
         students.push({
           name: record.get("Nombre y Apellido"),
@@ -87,7 +85,6 @@ students_table("Alumno")
           email: record.get("CustomerID"),
         });
       });
-
       fetchNextPage();
     },
     function done(err) {
@@ -96,97 +93,39 @@ students_table("Alumno")
         return;
       }
 
-      ta_table(COHORT_TA)
-        .select({
-          view: "Respuestas",
-          fields: [
-            "Nombre",
-            "Motivacion",
-            "Intencion",
-            "Razon",
-            "Feedback - Ideas",
-            "Feedback - Tareas",
-            "Importancia",
-          ],
-        })
-        .eachPage(
-          function page(records, fetchNextPage) {
-            records.forEach(function (record) {
-              students = students.map((s) => {
-                if (s.name === record.get("Nombre")) {
-                  s.motivation = record.get("Motivacion");
-                  console.log(record.get("Intencion"));
-                  if (record.get("Intencion") === "sólo HH") {
-                    s.HH = 1;
-                    s.TA = 0;
-                  } else if (record.get("Intencion") === "sólo TA") {
-                    s.TA = 1;
-                    s.HH = 0;
-                  } else if (record.get("Intencion") === "Ninguno") {
-                    s.TA = 0;
-                    s.HH = 0;
-                  } else {
-                    s.TA = 1;
-                    s.HH = 1;
-                  }
-                  s.reason = record.get("Razon");
-                  s.ideas_feedback = record.get("Feedback - Ideas");
-                  s.homework_feedback = record.get("Feedback - Tareas");
-                  s.importance = record.get("Importancia");
-                }
-                return s;
-              });
-            });
-            fetchNextPage();
-          },
-          async function done(err) {
-            if (err) {
-              console.error(err);
-              return;
-            }
+      getSpreadSheet()
+        .then(async (spreadsheet) => {
+          spreadsheet.forEach((ss) => {
             students = students.map((s) => {
-              if (!s.hasOwnProperty("motivation")) {
-                s.motivation = "";
-                s.TA = 0;
-                s.HH = 0;
-                s.reason = "";
-                s.ideas_feedback = "";
-                s.homework_feedback = "";
-                s.importance = "";
+              if (s.name === ss.student) {
+                s.ta_points = ss.points;
+                s.ta_comments = ss.comments;
               }
               return s;
             });
+          });
+          let responses = await axios.get(
+            `https://learning.soyhenry.com/toolbox/checkpoint-report/peer-review-cp/results/web${COHORT.toLowerCase()}`
+          );
 
-            getSpreadSheet()
-              .then(async (spreadsheet) => {
-                spreadsheet.forEach((ss) => {
-                  students = students.map((s) => {
-                    if (s.name === ss.student) {
-                      s.ta_points = ss.points;
-                      s.ta_comments = ss.comments;
-                    }
-                    return s;
-                  });
-                });
+          responses.data.rows.forEach((r) => {
+            students = students.map((s) => {
+              if (s.name === r.name) {
+                s.points = r.score;
+                s.TA = r.ta ? true : false;
+                s.HH = r.hh ? true : false;
+              }
+              return s;
+            });
+          });
 
-                responses.forEach((r) => {
-                  students = students.map(s => {
-                    if(s.name === r.name){
-                      s.points = r.score;
-                    }
-                    return s;
-                  })
-                });
+          return students;
+        })
+        .then(async (final) => {
+          const csv = new ObjectsToCsv(final);
 
-                return students;
-              })
-              .then(async (final) => {
-
-                const csv = new ObjectsToCsv(final);
-
-                await csv.toDisk("../csv/download.csv");
-              });
-          }
-        );
+          await csv.toDisk("../csv/download.csv");
+        })
+        .catch((e) => console.error(e));
     }
   );
